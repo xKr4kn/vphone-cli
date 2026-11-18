@@ -21,7 +21,8 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
     public static let manifest = VPhonePatchSetManifest(
         identifier: identifier,
         name: "Kernel Custom Firmware",
-        summary: "Trust cache admission, writable root, task ports and the guest's extra syscall surface",
+        summary:
+            "Trust cache admission, writable root, task ports and the guest's extra syscall surface",
         patches: [
             // MARK: Trust Cache and Code Signing
 
@@ -144,7 +145,8 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
             VPhonePatchDeclaration(
                 identifier: "kernel-boot-shared_region_size",
                 title: "Shared region size",
-                summary: "Widens the arm64 shared region from 6 GiB to 7 GiB so an iOS 27 cache spans it.",
+                summary:
+                    "Widens the arm64 shared region from 6 GiB to 7 GiB so an iOS 27 cache spans it.",
                 target: .firmware(.kernelcache),
                 applicability: ios27,
                 bootEssential: true,
@@ -197,6 +199,13 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 bootEssential: true,
             ),
             VPhonePatchDeclaration(
+                identifier: "kernel-cfw-file_check_mmap",
+                title: "MACF file-mmap gate",
+                summary:
+                    "Stubs the file_check_mmap dispatcher, so no MAC policy can deny a mapping or lower maxprot.",
+                target: .firmware(.kernelcache),
+            ),
+            VPhonePatchDeclaration(
                 identifier: "kernel-boot-iouc_macf_gate",
                 title: "IOUserClient MACF gate",
                 summary: "Lets the guest open user clients MACF would refuse.",
@@ -218,6 +227,13 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: "kernel-boot-kcall10",
                 title: "Kernel call syscall",
                 summary: "Installs the syscall the guest tooling uses to call into the kernel.",
+                target: .firmware(.kernelcache),
+                bootEssential: true,
+            ),
+            VPhonePatchDeclaration(
+                identifier: "kernel-boot-trace536",
+                title: "Syscall 536 tracer",
+                summary: "Records syscall 536 arguments and return value into a kernel buffer.",
                 target: .firmware(.kernelcache),
                 bootEssential: true,
             ),
@@ -276,12 +292,12 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: FirmwarePatchSetCatalog.paravirtUserClientsPatch,
                 title: "Paravirtual device access",
                 summary: """
-                Lets a process outside an app sandbox open the paravirtual GPU, video decoder, \
-                Neural Engine and IOSurface scaler, so daemons and command-line tools get Metal \
-                and WebKit decodes video in hardware. Allows only those four device classes by \
-                name; every other sandbox denial stays. Without it cameracaptured cannot \
-                prewarm its shaders and crash-loops at every boot.
-                """,
+                    Lets a process outside an app sandbox open the paravirtual GPU, video decoder, \
+                    Neural Engine and IOSurface scaler, so daemons and command-line tools get Metal \
+                    and WebKit decodes video in hardware. Allows only those four device classes by \
+                    name; every other sandbox denial stays. Without it cameracaptured cannot \
+                    prewarm its shaders and crash-loops at every boot.
+                    """,
                 target: .firmware(.kernelcache),
                 applicability: VPhonePatchApplicability(iOSBase: .oneOf([.major(26), .major(18)])),
             ),
@@ -292,11 +308,11 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: FirmwarePatchSetCatalog.proMotionPatch,
                 title: "ProMotion",
                 summary: """
-                Makes the paravirtual display advertise 120 Hz, as a ProMotion panel does, \
-                instead of the host's fixed 60 Hz mode. While it animates the guest renders \
-                twice as often, so the host spends up to twice the CPU and GPU on it; turn it \
-                off to keep 60 Hz.
-                """,
+                    Makes the paravirtual display advertise 120 Hz, as a ProMotion panel does, \
+                    instead of the host's fixed 60 Hz mode. While it animates the guest renders \
+                    twice as often, so the host spends up to twice the CPU and GPU on it; turn it \
+                    off to keep 60 Hz.
+                    """,
                 target: .firmware(.kernelcache),
             ),
         ],

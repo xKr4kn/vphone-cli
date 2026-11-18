@@ -54,6 +54,7 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
         patchAmfiCdhashInTrustcache()
         patchTaskConversionEvalInternal()
         patchSandboxHooksExtended()
+        patchMacFileCheckMmap()
         patchIoucFailedMacf()
 
         // iOS-27-only (gated — a 26.x base skips these entirely). Both target a 27
@@ -113,6 +114,7 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
         patchCredLabelUpdateExecve()
         patchHookCredLabelUpdateExecve()
         patchKcall10()
+        patchTrace536()
         patchSyscallmaskApplyToProc()
 
         // iOS-27-only (gated — a 26.x base skips these entirely). All target a 27
@@ -133,9 +135,9 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
         if applyIOS27 {
             patchExecSecurityPolicyKill()
             patchContainerManagerUpcall()
-            patchIomfbSwapEndVariableSize() // dispatch checkStructureInputSize → variable
-            patchIomfbSwapEndHandlerSize() // handler cmp w2,#0x588 → 0x6e0
-            patchFpfsScopedVnodeOpen() // ops[267] → FileProvider-scoped trampoline (fpfs respring fix)
+            patchIomfbSwapEndVariableSize()  // dispatch checkStructureInputSize → variable
+            patchIomfbSwapEndHandlerSize()  // handler cmp w2,#0x588 → 0x6e0
+            patchFpfsScopedVnodeOpen()  // ops[267] → FileProvider-scoped trampoline (fpfs respring fix)
         }
 
         return patches
