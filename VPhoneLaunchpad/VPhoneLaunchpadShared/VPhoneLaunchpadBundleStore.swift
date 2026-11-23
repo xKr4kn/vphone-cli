@@ -44,7 +44,8 @@ nonisolated struct VPhoneLaunchpadBundleReceipt: Codable, Equatable, Sendable {
     let cdhashes: [String: String]
 
     static func load(version: String) -> VPhoneLaunchpadBundleReceipt? {
-        guard let data = try? Data(contentsOf: VPhoneLaunchpadBundleStore.receipt(version: version)) else {
+        guard let data = try? Data(contentsOf: VPhoneLaunchpadBundleStore.receipt(version: version))
+        else {
             return nil
         }
         return try? decoder.decode(Self.self, from: data)
@@ -87,7 +88,7 @@ nonisolated enum VPhoneLaunchpadNames {
     /// --template --skip-first-boot`, which New Machine and Templates run,
     /// and `template` and `templateMatch` in `vm list --json`, which a
     /// machine's inspector shows.
-    private static let minimumBundleComponents = (2, 9, 0)
+    private static let minimumBundleComponents = (2, 9, 5)
     static let minimumBundleVersion =
         "\(minimumBundleComponents.0).\(minimumBundleComponents.1).\(minimumBundleComponents.2)"
 
@@ -121,7 +122,7 @@ nonisolated enum VPhoneLaunchpadNames {
         guard isValidVersion(value) else { return false }
         let parts = bundleVersion(of: value).split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3,
-              let major = Int(parts[0]), let minor = Int(parts[1]), let patch = Int(parts[2])
+            let major = Int(parts[0]), let minor = Int(parts[1]), let patch = Int(parts[2])
         else { return false }
         return (major, minor, patch) >= minimumBundleComponents
     }
