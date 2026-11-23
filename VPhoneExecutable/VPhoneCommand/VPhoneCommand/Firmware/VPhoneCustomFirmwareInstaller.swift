@@ -55,12 +55,17 @@ struct VPhoneCustomFirmwareInstaller {
         /// restore. The kernelcache is re-patched from the pristine copy in
         /// FirmwareOriginals, so no restore tree or prior `fw patch` is needed.
         case kernelUpdate
+        /// Restore the kernel slot that booted before the pending candidate.
+        /// The active slot artifact is written back into Preboot; no patch
+        /// pipeline runs, so a panicking candidate cannot poison the rollback.
+        case kernelRollback
 
         var summary: String {
             switch self {
             case .full: "CFW system install"
             case .environmentOnly: "guest environment update"
             case .kernelUpdate: "guest kernel update"
+            case .kernelRollback: "guest kernel rollback"
             }
         }
     }
@@ -152,6 +157,10 @@ struct VPhoneCustomFirmwareInstaller {
         setvbuf(stdout, nil, _IOLBF, 0)
         if mode == .kernelUpdate {
             try runKernelUpdate()
+            return
+        }
+        if mode == .kernelRollback {
+            try runKernelUpdate(rollback: true)
             return
         }
         // Ownership checks apply when the caller is known (SUDO_UID, which
@@ -337,7 +346,7 @@ struct VPhoneCustomFirmwareInstaller {
             let wasInstalled = (try? systemRoot.exists("System/Library/xpc/launchd.plist.bak")) ?? false
             priorGuest = receiptGuest ?? (wasInstalled ? priorFallback : [])
             switch mode {
-            case .kernelUpdate:
+            case .kernelUpdate, .kernelRollback:
                 break // handled by runKernelUpdate, never reached here
             case .full:
                 guard let restore else {
@@ -458,7 +467,7 @@ struct VPhoneCustomFirmwareInstaller {
             print("[+] CFW system install complete; vphoned is installed, no package bootstrap was staged")
         case .environmentOnly:
             print("[+] Guest environment updated; start the VM to pick it up")
-        case .kernelUpdate:
+        case .kernelUpdate, .kernelRollback:
             break // handled by runKernelUpdate
         }
     }
@@ -490,11 +499,63 @@ struct VPhoneCustomFirmwareInstaller {
     /// full install or the environment update, and does not mount the System or
     /// xART volumes or touch the root snapshot — iBoot reads the kernelcache
     /// from Preboot directly.
-    private func runKernelUpdate() throws {
+    private func runKernelUpdate(rollback: Bool = false) throws {
         let invokingUser = VPhoneInvokingUser.current
         let callerUID = invokingUser?.uid
         let bundleDirectory = try pinBundle(owner: callerUID)
         let bundlePath = try bundleDirectory.path
+
+        let bootState: FirmwareBootState?
+        if (try? bundleDirectory.isRegularFile(FirmwareBootAdmission.stateFileName)) == true {
+            bootState = try FirmwareBootAdmission.decodeState(
+                try bundleDirectory.readData(FirmwareBootAdmission.stateFileName),
+            )
+        } else {
+            bootState = nil
+        }
+        let pending: FirmwareBootPending?
+        if rollback {
+            guard let state = bootState, let pendingState = state.pending else {
+                throw FirmwareBootError.noPendingBoot
+            }
+            guard pendingState.installed else {
+                throw FirmwareBootError.bootNotInstalled
+            }
+            guard pendingState.slot != state.active else {
+                throw FirmwareBootError.invalidState("the pending slot is already active")
+            }
+            pending = pendingState
+        } else {
+            if let pendingState = bootState?.pending {
+                throw FirmwareBootError.pendingBoot(pendingState.slot)
+            }
+            pending = nil
+        }
+        let priorKernelPatches =
+            (try? bundleDirectory.readData(VPhonePatchPresetStore.receiptFileName))
+            .flatMap { try? VPhoneVirtualMachinePatchReceipt.decode($0) }
+            .flatMap {
+                $0.parts[VPhoneVirtualMachinePatchReceipt.part(for: .firmware(.kernelcache))]
+            }?
+            .patches ?? []
+        var rollbackBytes: Data?
+        if rollback, let state = bootState, let pending {
+            let previous = state.slot(pending.previousActive)
+            let data = try bundleDirectory.readData(
+                "\(FirmwareBootAdmission.slotsDirectoryName)/\(FirmwareBootAdmission.slotFileName(pending.previousActive))",
+            )
+            guard data.count == previous.artifact.size,
+                FirmwareBootAdmission.sha256(data) == previous.artifact.sha256
+            else {
+                throw ValidationError(
+                    "The recorded kernel slot \(pending.previousActive.rawValue.uppercased()) is missing or changed; refusing to roll back to unknown bytes.",
+                )
+            }
+            rollbackBytes = data
+        }
+        let rollbackEvidence =
+            ProcessInfo.processInfo.environment["VPHONE_BOOT_ROLLBACK_EVIDENCE"]
+            ?? "operator rollback after a failed boot"
 
         let disk = try openDiskImage(in: bundleDirectory, path: bundlePath, owner: callerUID)
         let diskPath = (bundlePath as NSString).appendingPathComponent("Disk.img")
@@ -509,11 +570,23 @@ struct VPhoneCustomFirmwareInstaller {
                 fputs("warning: left CFW work directory at \(work.url.path): \(error)\n", stderr)
             }
         }
-        try requireFreeSpace(at: [bundlePath, work.url.path])
+        try requireFreeSpace(at: [bundlePath, work.url.path], minimumGiB: 4)
 
-        let (patched, enabledKernelPatches) = try patchedKernelcacheForUpdate(
-            in: bundleDirectory, path: bundlePath, owner: callerUID, work: work,
-        )
+        let patched: Data
+        let enabledKernelPatches: Set<String>
+        if rollback {
+            guard let state = bootState, let pending else {
+                throw FirmwareBootError.noPendingBoot
+            }
+            patched = Data()
+            enabledKernelPatches = Set(state.slot(pending.previousActive).enabledKernelPatches)
+        } else {
+            let result = try patchedKernelcacheForUpdate(
+                in: bundleDirectory, path: bundlePath, owner: callerUID, work: work,
+            )
+            patched = result.payload
+            enabledKernelPatches = result.enabledKernelPatches
+        }
 
         let image: URL
         let cloned = try work.directory.clone(disk, to: "Disk.img")
@@ -606,13 +679,124 @@ struct VPhoneCustomFirmwareInstaller {
             guard let newBytes = try CustomFirmwarePostRestoreDeviceTree.kernelcacheReplacingPayload(
                 prebootIMG4: current, patchedKernelcache: patched,
             ) else {
-                print("  [.] Preboot kernelcache already matches the patched one — no change")
-                return false
+            let owner = invokingUser.map { ($0.uid, $0.gid) }
+            let newBytes: Data
+            var planState: FirmwareBootState?
+            if rollback {
+                guard let rollbackBytes, let pending else {
+                    throw FirmwareBootError.noPendingBoot
+                }
+                guard FirmwareBootAdmission.sha256(current) == pending.kernelSHA256 else {
+                    throw ValidationError(
+                        "The Preboot kernelcache is not the pending candidate; refusing to roll back over an unknown kernel.",
+                    )
+                }
+                newBytes = rollbackBytes
+            } else {
+                guard
+                    let swapped =
+                        try CustomFirmwarePostRestoreDeviceTree.kernelcacheReplacingPayload(
+                            prebootIMG4: current, patchedKernelcache: patched,
+                        )
+                else {
+                    print("  [.] Preboot kernelcache already matches the patched one — no change")
+                    return false
+                }
+                newBytes = swapped
+                let plan = try FirmwareBootAdmission.plan(
+                    state: bootState,
+                    current: current,
+                    candidate: newBytes,
+                    activeEnabled: priorKernelPatches,
+                    candidateEnabled: Array(enabledKernelPatches).sorted(),
+                    now: Date(),
+                )
+                planState = plan.state
+                let slots = try bundleDirectory.directory(
+                    FirmwareBootAdmission.slotsDirectoryName, create: true, mode: 0o777,
+                )
+                if plan.writeActive {
+                    try slots.writeFile(
+                        FirmwareBootAdmission.slotFileName(plan.state.active),
+                        contents: current, mode: 0o777, owner: owner,
+                    )
+                } else if (try? slots.isRegularFile(
+                    FirmwareBootAdmission.slotFileName(plan.state.active),
+                )) != true {
+                    throw ValidationError(
+                        "The active kernel slot is missing from this VM. Recreate the slot before updating it.",
+                    )
+                }
+                if plan.writeCandidate {
+                    try slots.writeFile(
+                        FirmwareBootAdmission.slotFileName(plan.target),
+                        contents: newBytes, mode: 0o777, owner: owner,
+                    )
+                }
+                try bundleDirectory.writeFile(
+                    FirmwareBootAdmission.stateFileName,
+                    contents: try FirmwareBootAdmission.encode(state: plan.state),
+                    mode: 0o777, owner: owner,
+                )
             }
             let staged = work.file("kernelcache.new")
-            try newBytes.write(to: staged)
-            try root.replaceFile(kernelcache, fromFileAt: staged, mode: meta.st_mode & 0o7777, owner: (meta.st_uid, meta.st_gid))
-            print("  [+] Preboot kernelcache replaced (\(current.count) -> \(newBytes.count) bytes), manifest kept")
+            do {
+                try newBytes.write(to: staged)
+                try root.replaceFile(
+                    kernelcache, fromFileAt: staged, mode: meta.st_mode & 0o7777,
+                    owner: (meta.st_uid, meta.st_gid),
+                )
+            } catch {
+                if var failed = planState {
+                    failed.pending = nil
+                    if let failedData = try? FirmwareBootAdmission.encode(state: failed) {
+                        try? bundleDirectory.writeFile(
+                            FirmwareBootAdmission.stateFileName,
+                            contents: failedData, mode: 0o777, owner: owner,
+                        )
+                    }
+                }
+                throw error
+            }
+            if rollback {
+                guard let state = bootState, let pending else {
+                    throw FirmwareBootError.noPendingBoot
+                }
+                let (next, receipt) = try FirmwareBootAdmission.rollback(
+                    state: state,
+                    result: .panicked,
+                    evidence: rollbackEvidence,
+                    now: Date(),
+                )
+                try bundleDirectory.writeFile(
+                    FirmwareBootAdmission.stateFileName,
+                    contents: try FirmwareBootAdmission.encode(state: next),
+                    mode: 0o777, owner: owner,
+                )
+                try bundleDirectory.writeFile(
+                    FirmwareBootAdmission.receiptFileName,
+                    contents: try FirmwareBootAdmission.encodeReceipt(receipt),
+                    mode: 0o777, owner: owner,
+                )
+                print(
+                    "  [+] Preboot kernelcache restored to slot \(pending.previousActive.rawValue.uppercased()); slot \(pending.slot.rawValue.uppercased()) is now bad"
+                )
+            } else {
+                guard let planState else {
+                    throw FirmwareBootError.invalidState("the update plan state was lost")
+                }
+                let installed = try FirmwareBootAdmission.markInstalled(
+                    state: planState, now: Date(),
+                )
+                try bundleDirectory.writeFile(
+                    FirmwareBootAdmission.stateFileName,
+                    contents: try FirmwareBootAdmission.encode(state: installed),
+                    mode: 0o777, owner: owner,
+                )
+                print(
+                    "  [+] Preboot kernelcache replaced (\(current.count) -> \(newBytes.count) bytes), manifest kept"
+                )
+            }
             return true
         }()
 
@@ -628,9 +812,19 @@ struct VPhoneCustomFirmwareInstaller {
             try work.directory.rename("Disk.img", to: "Disk.img", in: bundleDirectory)
         }
         if changed {
-            recordKernelcacheReceipt(enabled: enabledKernelPatches, in: bundleDirectory, owner: invokingUser.map { ($0.uid, $0.gid) })
+            recordKernelcacheReceipt(
+                enabled: enabledKernelPatches,
+                writer: rollback ? "cfw boot-rollback" : "cfw update-kernel",
+                in: bundleDirectory,
+                owner: invokingUser.map { ($0.uid, $0.gid) })
         }
-        print("[+] Guest kernel updated; start the VM to boot the re-patched kernelcache")
+        if rollback {
+            print("[+] Kernel rolled back to the previous slot; the failed candidate is marked bad")
+        } else {
+            print(
+                "[+] Guest kernel updated; start the VM, then run `vphone-cli cfw boot-commit \(bundle.lastPathComponent)` after it answers"
+            )
+        }
     }
 
     /// The patched kernelcache (a bare IM4P) to install into Preboot, for the
@@ -721,6 +915,7 @@ struct VPhoneCustomFirmwareInstaller {
     /// plan `fw patch` resolved. Best-effort, like `recordGuestReceipt`.
     private func recordKernelcacheReceipt(
         enabled: Set<String>,
+        writer: String,
         in bundleDirectory: VPhoneConfinedDirectory,
         owner: (uid: uid_t, gid: gid_t)?,
     ) {
@@ -734,7 +929,7 @@ struct VPhoneCustomFirmwareInstaller {
             receipt.record(
                 VPhoneFirmwareComponent.kernelcache.rawValue,
                 patches: kernelPatches,
-                writer: "cfw update-kernel",
+                writer: writer,
                 bundleVersion: bundleVersion,
             )
             try bundleDirectory.writeFile(
@@ -928,7 +1123,7 @@ struct VPhoneCustomFirmwareInstaller {
         throw ValidationError("No prepared iPhone restore tree was found in \(path). Run fw prepare, then install CFW again.")
     }
 
-    private func requireFreeSpace(at paths: [String]) throws {
+    private func requireFreeSpace(at paths: [String], minimumGiB: Int = 50) throws {
         var seen = Set<dev_t>()
         for path in paths {
             var metadata = stat()
@@ -936,8 +1131,10 @@ struct VPhoneCustomFirmwareInstaller {
             let capacity =
                 try URL(fileURLWithPath: path).resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey])
                     .volumeAvailableCapacityForImportantUsage ?? 0
-            guard capacity > 50 * 1024 * 1024 * 1024 else {
+            let minimum = Int64(minimumGiB) * 1024 * 1024 * 1024
+            guard capacity > minimum else {
                 throw ValidationError("Less than 50 GiB of disk space is available on the volume holding \(path). Free up space, then install CFW again.")
+                    "Less than \(minimumGiB) GiB of disk space is available on the volume holding \(path). Free up space, then try again."
             }
         }
     }
