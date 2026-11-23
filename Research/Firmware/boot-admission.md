@@ -1,16 +1,19 @@
 # A/B kernel admission for `cfw update-kernel`
 
-Status: ported to upstream 2.17.1 (2026-11-23). The A/B admission tests pass 14/14; the 2.17.1 Launchpad control, firmware-admission, helper-library, and bundle-name tests pass. Historical live A/B rollback was validated on `vphone26s` (2026-11-23) on the 2.9.5 line; the 2.17.1 VM validation is recorded below when it runs.
+Status: ported to upstream 2.17.1 (2026-11-23). The A/B admission tests pass 14/14; the 2.17.1 Launchpad control, firmware-admission, helper-library, and bundle-name tests pass. Historical live A/B rollback was validated on `vphone26s` (2026-11-23) on the 2.9.5 line; the 2.17.1 VM validation is recorded below.
 
 ## 2.17.1 port validation (2026-11-23)
 
 - Built and signed Launchpad 2.17.1 (helper 22) and `VPhone.bundle` 2.17.1, installed the local bundle as `2.17.1-local.4f8f5656`, bound `vphone26`, and updated its guest environment. Baseline: active `A` (`ad9302…`), standby `B`.
 - The trace536 + display-promotion candidate `B` (`6034c2…`, 86 patches) panicked in launchd with a PAC failure; `cfw boot-rollback` restored `A`, marked `B` bad, and the restored `A` answered vphoned after 4 s.
 - A trace-off/display-promotion-off candidate `B` (`1b562e…`, 83 patches) booted; `cfw boot-commit` promoted it (`active: b`, `A` standby), wrote a `booted` receipt for slot `B`, and the committed `B` booted and answered `device.info`.
-- A trace-on/display-promotion-off candidate also panicked; trace536 is the common failure, so it is declared `bootEssential: false` and `vphone26` blocks both `kernel-boot-trace536` and `kernel-cfw-display_promotion`. Final state: active `B`, `A` bad, machine stopped.
-- Guest infrastructure on the booted kernel: `ui.describe`, `apps.list`, `processes.list` (200), and a locked screenshot succeeded; unlock succeeded, but the guest agent dropped before the next screenshot on the 2.17.1 guest environment over the 2.9.x boot chain/2.9.5 kernel. This needs a 2.17.1 boot-chain/guest-environment revalidation.
+- **Trace536 root cause and fix:** the cave epilogue restored `x19/x20` before `x21/x30`; the second load put the saved `x20` into `x30`, so `retab` failed at cave `+0x78` (`0xAB18BC`). Restoring `x21/x30` first (and `x19/x20` second) fixes it. The fixed bundle is `2.17.1-local.d149f226`; a trace-on/display-promotion-off candidate (85 patches) booted, vphoned answered, `cfw boot-commit` made slot `A` active with a `booted` receipt, and the committed `A` re-booted and answered vphoned.
+- Final `vphone26`: active `A` (trace536 on, display promotion blocked), `B` standby, stopped. `vphone26s` was rebound to `2.17.1-local.d149f226` with the 2.17.1 guest environment; it booted, answered vphoned, and stopped.
+- **Installing-state fix:** a failed install step with no `error` text left `isInstalling` true. `InstallProgress.overall` now treats any failed step as `.failed`; `canSkip` allows skipping a failed post-install check; `isInstalling` is true only while overall is `.running`. The stale `bundle-install.json` was removed; the fixed app reports `installing: false`, `canInstallBundles: true`, helper `ready (22)`.
+- Guest infrastructure: `ui.describe`, `apps.list`, `processes.list` (200), and a locked screenshot succeeded; unlock succeeded, but the guest agent dropped before the next screenshot on the older 2.9.x boot chain. The rebooted trace-fixed `A` answered vphoned; `vphone26s` also answered vphoned after rebinding.
 - Host tests: A/B 14/14; Launchpad 13 shell scripts; CoreKit 784; Restore 73; Sign 30; FirmwarePatcher 1023/1028 (5 missing local `ipsws` fixtures); ArchiveKit 101/103 (one host-tar parity failure).
-- The bundle's AMFI allow step failed because `amfid` had idle-exited (`escalator status: amfid is not running`); preflight passed and the bundle was accepted for this permissive-host test.
+- The d149 bundle install passed both policy and preflight; the earlier 4f8 install's AMFI allow step failed because `amfid` had idle-exited. The fixed app's install state no longer sticks.
+
 
 
 

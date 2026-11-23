@@ -10,7 +10,7 @@
 //   adrp/add x12, LOG; stur the four values
 //   mov x0,x19; mov x1,x20; adrp/add x16, ORIG; blr x16
 //   stur x0,[x12,#0x20]; stur magic,[x12,#0x28]
-//   ldp x19,x20; ldp x21,x30; retab
+//   ldp x21,x30; ldp x19,x20; retab
 //
 // adrp/add are computed from unslid VAs; both cave and targets share one slide, so the
 // PC-relative encoding stays valid at runtime (same technique as kcall10's slide oracle).
@@ -59,7 +59,7 @@ extension KernelCustomFirmwarePatcher {
         let cave = buildTrace536Cave(caveVA: caveVA, origVA: origVA, logVA: logVA)
         emit(
             caveOff, cave,
-            patchID: "kernel-boot-trace536.cave",
+            patchID: "kernel-cfw-trace536.cave",
             description: "trace536 cave (logs uap[0..3] + ret to 0x\(String(format: "%X", logVA)))")
         emit(
             entry,
@@ -70,7 +70,7 @@ extension KernelCustomFirmwarePatcher {
                 key: extractChainKeyForTrace(oldCall),
                 addrDiv: extractChainAddrDivForTrace(oldCall)
             ),
-            patchID: "kernel-boot-trace536.sy_call",
+            patchID: "kernel-cfw-trace536.sy_call",
             description: "sysent[536].sy_call = trace536 cave 0x\(String(format: "%X", caveOff))")
         log(
             "  [+] orig handler foff 0x\(String(format: "%X", origFoff)) va 0x\(String(format: "%X", origVA))"
@@ -152,8 +152,8 @@ extension KernelCustomFirmwarePatcher {
         code.append(0xF2A0_0000 | (((magic >> 16) & 0xFFFF) << 5) | 9)  // movk x9, #hi16, lsl 16
         code.append(0xF802_8189)  // stur x9, [x12, #0x28]
         let epilogueIdx = code.count
-        code.append(0xA8C1_53F3)  // ldp x19, x20, [sp], #0x10
         code.append(0xA8C1_7BF5)  // ldp x21, x30, [sp], #0x10
+        code.append(0xA8C1_53F3)  // ldp x19, x20, [sp], #0x10
         code.append(0xD65F_0FFF)  // retab
         // magic path: return the buffer's runtime address in x0 (PC-relative, always correct)
         let magicIdx = code.count

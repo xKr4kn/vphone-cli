@@ -111,14 +111,20 @@ final class VPhoneLaunchpadCoreBundle {
             plan.allSatisfy { status($0) == .passed || status($0) == .warning }
         }
 
+        /// A step that is failed is terminal even when no error text was
+        /// attached, such as a policy check that failed while preflight passed.
+        var hasFailedStep: Bool {
+            plan.contains { status($0) == .failed }
+        }
+
         /// Once the bundle is in the store, only the checks after it failed,
         /// and those may be skipped.
         var canSkip: Bool {
-            error != nil && status(.install) == .passed
+            (error != nil || hasFailedStep) && status(.install) == .passed && !isFinished
         }
 
         var overall: VPhoneLaunchpadStatus {
-            if error != nil {
+            if error != nil || hasFailedStep {
                 return .failed
             }
             if !isFinished {
@@ -157,9 +163,11 @@ final class VPhoneLaunchpadCoreBundle {
         #endif
         progress = Self.loadProgress()
         loadInstalled()
-        let passed = UserDefaults.standard.dictionary(forKey: Self.passedVersionsKey) as? [String: String] ?? [:]
+        let passed =
+            UserDefaults.standard.dictionary(forKey: Self.passedVersionsKey) as? [String: String]
+            ?? [:]
         for index in installed.indices
-            where VPhoneLaunchpadNames.isCompatibleBundleVersion(installed[index].version)
+        where VPhoneLaunchpadNames.isCompatibleBundleVersion(installed[index].version)
             && passed[installed[index].version] == installed[index].receipt.sha256
         {
             installed[index].policy = .passed
@@ -170,7 +178,9 @@ final class VPhoneLaunchpadCoreBundle {
     }
 
     private func recordCheck(_ version: String) {
-        var passed = UserDefaults.standard.dictionary(forKey: Self.passedVersionsKey) as? [String: String] ?? [:]
+        var passed =
+            UserDefaults.standard.dictionary(forKey: Self.passedVersionsKey) as? [String: String]
+            ?? [:]
         let item = installed.first { $0.version == version }
         if let item, item.policy == .passed, item.preflight == .passed {
             passed[version] = item.receipt.sha256
@@ -196,10 +206,16 @@ final class VPhoneLaunchpadCoreBundle {
         get {
             access(keyPath: \.defaultVersion)
             let stored = UserDefaults.standard.string(forKey: Self.defaultVersionKey)
-            if let stored, installed.contains(where: { $0.version == stored && VPhoneLaunchpadNames.isCompatibleBundleVersion($0.version) }) {
+            if let stored,
+                installed.contains(where: {
+                    $0.version == stored
+                        && VPhoneLaunchpadNames.isCompatibleBundleVersion($0.version)
+                })
+            {
                 return stored
             }
-            return installed.first { VPhoneLaunchpadNames.isCompatibleBundleVersion($0.version) }?.version
+            return installed.first { VPhoneLaunchpadNames.isCompatibleBundleVersion($0.version) }?
+                .version
         }
         set {
             withMutation(keyPath: \.defaultVersion) {
@@ -225,7 +241,7 @@ final class VPhoneLaunchpadCoreBundle {
     /// accepted without.
     func isUsable(_ version: String) -> Bool {
         guard VPhoneLaunchpadNames.isCompatibleBundleVersion(version),
-              let item = installed.first(where: { $0.version == version })
+            let item = installed.first(where: { $0.version == version })
         else {
             return false
         }
@@ -241,7 +257,7 @@ final class VPhoneLaunchpadCoreBundle {
         guard let progress else {
             return false
         }
-        return progress.error == nil && !progress.isFinished
+        return progress.overall == .running
     }
 
     // MARK: - Accepted versions
@@ -274,7 +290,9 @@ final class VPhoneLaunchpadCoreBundle {
     /// The newest release that is not installed yet, if it is newer than
     /// everything installed.
     var availableUpdate: VPhoneLaunchpadRelease? {
-        guard let latest = releases.first, !installed.contains(where: { $0.version == latest.version }) else {
+        guard let latest = releases.first,
+            !installed.contains(where: { $0.version == latest.version })
+        else {
             return nil
         }
         return latest
@@ -290,12 +308,13 @@ final class VPhoneLaunchpadCoreBundle {
     /// `vphone-cli` of one installed, supported version.
     func commandLine(version: String) -> VPhoneLaunchpadCommandLine? {
         guard VPhoneLaunchpadNames.isCompatibleBundleVersion(version),
-              installed.contains(where: { $0.version == version })
+            installed.contains(where: { $0.version == version })
         else {
             return nil
         }
         return VPhoneLaunchpadCommandLine(
-            executable: VPhoneLaunchpadBundleStore.executable(version: version, named: "vphone-cli"),
+            executable: VPhoneLaunchpadBundleStore.executable(
+                version: version, named: "vphone-cli"),
             history: history,
         )
     }
@@ -322,11 +341,17 @@ final class VPhoneLaunchpadCoreBundle {
         guard installed.contains(where: { $0.version == version }) else {
             throw VPhoneLaunchpadError(
                 String(localized: "VPhone.bundle \(version) is not installed."),
-                detail: String(localized: "Install it in Core Bundle, or choose another version for this machine."),
+                detail: String(
+                    localized:
+                        "Install it in Core Bundle, or choose another version for this machine."),
             )
         }
         guard VPhoneLaunchpadNames.isCompatibleBundleVersion(version) else {
-            throw VPhoneLaunchpadError(String(localized: "Requires VPhone.bundle \(VPhoneLaunchpadNames.minimumBundleVersion) or newer."))
+            throw VPhoneLaunchpadError(
+                String(
+                    localized:
+                        "Requires VPhone.bundle \(VPhoneLaunchpadNames.minimumBundleVersion) or newer."
+                ))
         }
         if checks[version] != nil || !checkedThisSession.contains(version) {
             await check(version)
@@ -381,18 +406,25 @@ final class VPhoneLaunchpadCoreBundle {
     }
 
     private func loadInstalled() {
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: VPhoneLaunchpadBundleStore.root.path)) ?? []
-        let receipts = names
+        let names =
+            (try? FileManager.default.contentsOfDirectory(
+                atPath: VPhoneLaunchpadBundleStore.root.path)) ?? []
+        let receipts =
+            names
             .filter(VPhoneLaunchpadNames.isValidVersion)
             .compactMap(VPhoneLaunchpadBundleReceipt.load)
             .sorted { $0.version.compare($1.version, options: .numeric) == .orderedDescending }
         installed = receipts.map { receipt in
-            var item = installed.first { $0.version == receipt.version && $0.receipt == receipt }
+            var item =
+                installed.first { $0.version == receipt.version && $0.receipt == receipt }
                 ?? Installed(receipt: receipt)
             if !VPhoneLaunchpadNames.isCompatibleBundleVersion(receipt.version) {
                 item.policy = .failed
                 item.preflight = .failed
-                item.preflightDetail = String(localized: "Requires VPhone.bundle \(VPhoneLaunchpadNames.minimumBundleVersion) or newer.")
+                item.preflightDetail = String(
+                    localized:
+                        "Requires VPhone.bundle \(VPhoneLaunchpadNames.minimumBundleVersion) or newer."
+                )
             }
             return item
         }
@@ -407,7 +439,10 @@ final class VPhoneLaunchpadCoreBundle {
             update(version) {
                 $0.policy = .failed
                 $0.preflight = .failed
-                $0.preflightDetail = String(localized: "Requires VPhone.bundle \(VPhoneLaunchpadNames.minimumBundleVersion) or newer.")
+                $0.preflightDetail = String(
+                    localized:
+                        "Requires VPhone.bundle \(VPhoneLaunchpadNames.minimumBundleVersion) or newer."
+                )
             }
             return
         }
@@ -433,7 +468,8 @@ final class VPhoneLaunchpadCoreBundle {
         }
 
         let commandLine = VPhoneLaunchpadCommandLine(
-            executable: VPhoneLaunchpadBundleStore.executable(version: version, named: "vphone-cli"),
+            executable: VPhoneLaunchpadBundleStore.executable(
+                version: version, named: "vphone-cli"),
             history: history,
         )
         do {
@@ -447,10 +483,11 @@ final class VPhoneLaunchpadCoreBundle {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             update(version) {
                 $0.preflight = result.succeeded ? .passed : .failed
-                $0.preflightDetail = result.succeeded
+                $0.preflightDetail =
+                    result.succeeded
                     ? String(localized: "Passed")
                     : (failure.isEmpty ? String(localized: "Preflight failed") : failure)
-                    .replacingOccurrences(of: "Error: ", with: "")
+                        .replacingOccurrences(of: "Error: ", with: "")
             }
         } catch {
             update(version) {
@@ -496,7 +533,8 @@ final class VPhoneLaunchpadCoreBundle {
             }
             set(.verify, .passed)
 
-            try await installAndVerify(version: release.version, archive: file, sha256: release.sha256)
+            try await installAndVerify(
+                version: release.version, archive: file, sha256: release.sha256)
         } catch {
             fail(error)
         }
@@ -520,7 +558,8 @@ final class VPhoneLaunchpadCoreBundle {
             progress?.version = local.version
             set(.prepare, .passed)
 
-            try await installAndVerify(version: local.version, archive: local.archive, sha256: local.sha256)
+            try await installAndVerify(
+                version: local.version, archive: local.archive, sha256: local.sha256)
         } catch {
             fail(error)
         }
@@ -540,7 +579,8 @@ final class VPhoneLaunchpadCoreBundle {
         loadInstalled()
         // A bare `-local` from an older Launchpad names no build, so it is
         // replaced as before.
-        let isSameBuild = VPhoneLaunchpadNames.isLocalBuild(version)
+        let isSameBuild =
+            VPhoneLaunchpadNames.isLocalBuild(version)
             && !version.hasSuffix(VPhoneLaunchpadLocalBundle.versionSuffix)
             && installed.contains { $0.version == version }
         if !isSameBuild {
@@ -568,7 +608,10 @@ final class VPhoneLaunchpadCoreBundle {
         set(.preflight, installed?.preflight ?? .failed)
         if installed?.preflight != .passed {
             throw VPhoneLaunchpadError(
-                String(localized: "Host preflight failed. Fix the issue and retry, or skip to use this version anyway."),
+                String(
+                    localized:
+                        "Host preflight failed. Fix the issue and retry, or skip to use this version anyway."
+                ),
                 detail: installed?.preflightDetail,
             )
         }
@@ -578,8 +621,11 @@ final class VPhoneLaunchpadCoreBundle {
         for step in InstallStep.allCases where progress?.status(step) == .running {
             set(step, .failed)
         }
-        progress?.error = error as? VPhoneLaunchpadError
-            ?? VPhoneLaunchpadError(String(localized: "Unable to install the bundle. Try again."), detail: error.localizedDescription)
+        progress?.error =
+            error as? VPhoneLaunchpadError
+            ?? VPhoneLaunchpadError(
+                String(localized: "Unable to install the bundle. Try again."),
+                detail: error.localizedDescription)
     }
 
     // MARK: - Retry and skip
@@ -592,7 +638,7 @@ final class VPhoneLaunchpadCoreBundle {
             return
         }
         if progress.status(.install) == .passed, let version = progress.version,
-           installed.contains(where: { $0.version == version })
+            installed.contains(where: { $0.version == version })
         {
             self.progress?.error = nil
             do {
@@ -604,9 +650,9 @@ final class VPhoneLaunchpadCoreBundle {
         }
         let keepsDefault = progress.keepsDefault ?? false
         switch progress.source {
-        case let .release(release):
+        case .release(let release):
             await install(release, keepsDefault: keepsDefault)
-        case let .local(path):
+        case .local(let path):
             await installLocal(URL(fileURLWithPath: path), keepsDefault: keepsDefault)
         }
     }
@@ -647,14 +693,16 @@ final class VPhoneLaunchpadCoreBundle {
             try? FileManager.default.removeItem(at: file)
             return
         }
-        try? FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? FileManager.default.createDirectory(
+            at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? VPhoneLaunchpadBundleReceipt.encoder.encode(progress).write(to: file, options: .atomic)
     }
 
     /// A step still marked running belonged to a Launchpad that quit.
     private static func loadProgress() -> InstallProgress? {
         guard let data = try? Data(contentsOf: progressFile),
-              var progress = try? VPhoneLaunchpadBundleReceipt.decoder.decode(InstallProgress.self, from: data)
+            var progress = try? VPhoneLaunchpadBundleReceipt.decoder.decode(
+                InstallProgress.self, from: data)
         else {
             return nil
         }
@@ -665,7 +713,8 @@ final class VPhoneLaunchpadCoreBundle {
         for step in interrupted {
             progress.steps[step] = .failed
         }
-        progress.error = VPhoneLaunchpadError(String(localized: "Launchpad quit before the install finished. Retry to continue."))
+        progress.error = VPhoneLaunchpadError(
+            String(localized: "Launchpad quit before the install finished. Retry to continue."))
         return progress
     }
 
@@ -695,14 +744,19 @@ final class VPhoneLaunchpadCoreBundle {
         guard active.isEmpty else {
             actionError = VPhoneLaunchpadError(
                 String(localized: "Unable to Remove VPhone.bundle \(version)"),
-                detail: String(localized: "These machines are running from it: \(active.joined(separator: ", ")). Stop them first."),
+                detail: String(
+                    localized:
+                        "These machines are running from it: \(active.joined(separator: ", ")). Stop them first."
+                ),
             )
             return
         }
         do {
             try await helper.removeBundle(version: version)
         } catch {
-            actionError = VPhoneLaunchpadError(String(localized: "Unable to Remove VPhone.bundle \(version)"), detail: error.localizedDescription)
+            actionError = VPhoneLaunchpadError(
+                String(localized: "Unable to Remove VPhone.bundle \(version)"),
+                detail: error.localizedDescription)
         }
         loadInstalled()
         if !installed.contains(where: { $0.version == version }) {
@@ -724,19 +778,26 @@ final class VPhoneLaunchpadCoreBundle {
                 return
             }
             var progress = InstallProgress(release: releases[1])
-            progress.steps = [.download: .passed, .verify: .passed, .install: .passed, .policy: .passed, .preflight: .failed]
+            progress.steps = [
+                .download: .passed, .verify: .passed, .install: .passed, .policy: .passed,
+                .preflight: .failed,
+            ]
             progress.error = VPhoneLaunchpadError(
-                String(localized: "Host preflight failed. Fix the issue and retry, or skip to use this version anyway."),
+                String(
+                    localized:
+                        "Host preflight failed. Fix the issue and retry, or skip to use this version anyway."
+                ),
                 detail: "AMFI blocked vphone-vm",
             )
             self.progress = progress
             installed = VPhoneLaunchpadPreview.releases.dropFirst().map { release in
-                var bundle = Installed(receipt: VPhoneLaunchpadBundleReceipt(
-                    version: release.version,
-                    sha256: release.sha256,
-                    installedAt: release.publishedAt.addingTimeInterval(3600),
-                    cdhashes: [:],
-                ))
+                var bundle = Installed(
+                    receipt: VPhoneLaunchpadBundleReceipt(
+                        version: release.version,
+                        sha256: release.sha256,
+                        installedAt: release.publishedAt.addingTimeInterval(3600),
+                        cdhashes: [:],
+                    ))
                 bundle.policy = .passed
                 bundle.policyDetail = "exception"
                 bundle.preflight = .passed
