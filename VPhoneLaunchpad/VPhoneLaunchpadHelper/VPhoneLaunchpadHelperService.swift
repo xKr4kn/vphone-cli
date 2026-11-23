@@ -2,7 +2,9 @@ import Darwin
 import Foundation
 
 /// The object exported to one app connection.
-final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtocol, @unchecked Sendable {
+final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtocol,
+    @unchecked Sendable
+{
     private weak var connection: NSXPCConnection?
     private let callerUID: uid_t
     private let callerGID: gid_t
@@ -13,7 +15,8 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
     /// is `VPhoneLaunchpadHelperFirmwareAdmission`. The owner is the user that
     /// started a run, the only one allowed to cancel it.
     private static let firmwareLock = NSLock()
-    private nonisolated(unsafe) static var firmwareRuns: [VPhoneLaunchpadHelperFirmwareRequest.MachineKey: FirmwareRun] = [:]
+    private nonisolated(unsafe) static var firmwareRuns:
+        [VPhoneLaunchpadHelperFirmwareRequest.MachineKey: FirmwareRun] = [:]
 
     private struct FirmwareRun {
         let process: Process
@@ -46,7 +49,8 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
         work.async {
             do {
                 try VPhoneLaunchpadHelperAuthorization.require(authorization)
-                try VPhoneLaunchpadHelperBundleInstaller.install(version: version, archive: archive, sha256: sha256)
+                try VPhoneLaunchpadHelperBundleInstaller.install(
+                    version: version, archive: archive, sha256: sha256)
                 reply(nil)
             } catch {
                 reply(error.localizedDescription)
@@ -54,7 +58,9 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
         }
     }
 
-    func removeBundle(authorization: Data, version: String, reply: @escaping @Sendable (String?) -> Void) {
+    func removeBundle(
+        authorization: Data, version: String, reply: @escaping @Sendable (String?) -> Void
+    ) {
         work.async {
             do {
                 try VPhoneLaunchpadHelperAuthorization.require(authorization)
@@ -66,7 +72,9 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
         }
     }
 
-    func allowVirtualMachine(authorization: Data, bundleVersion: String, reply: @escaping @Sendable (String?) -> Void) {
+    func allowVirtualMachine(
+        authorization: Data, bundleVersion: String, reply: @escaping @Sendable (String?) -> Void
+    ) {
         work.async {
             do {
                 try VPhoneLaunchpadHelperAuthorization.require(authorization)
@@ -166,6 +174,23 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
         )
     }
 
+    func rollbackKernel(
+        authorization: Data,
+        bundleVersion: String,
+        machineName: String,
+        libraryRoot: String,
+        reply: @escaping @Sendable (Int32, String?) -> Void,
+    ) {
+        runFirmware(
+            .bootRollback,
+            authorization: authorization,
+            bundleVersion: bundleVersion,
+            machineName: machineName,
+            libraryRoot: libraryRoot,
+            reply: reply,
+        )
+    }
+
     /// All four operations share one slot per machine, so an install and
     /// an update never write the same machine at once, and one cancel for
     /// that machine stops whichever is running.
@@ -242,7 +267,9 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
 
     /// Why a run may not start now, or nil. Called with `firmwareLock` held;
     /// the capacity queries it makes are quick.
-    private static func firmwareRefusal(for request: VPhoneLaunchpadHelperFirmwareRequest) -> String? {
+    private static func firmwareRefusal(for request: VPhoneLaunchpadHelperFirmwareRequest)
+        -> String?
+    {
         VPhoneLaunchpadHelperFirmwareAdmission.refusal(
             machine: request.machineKey,
             volumes: request.volumes,
@@ -303,7 +330,8 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
             DispatchQueue.global().async(group: drained) {
                 errorData = errors.fileHandleForReading.readDataToEndOfFile()
             }
-            let text = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            let text = String(
+                decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             drained.wait()
             process.waitUntilExit()
             guard process.terminationReason == .exit, process.terminationStatus == 0 else {
@@ -312,7 +340,11 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
                     .split(separator: "\n")
                     .first { $0.hasPrefix("Error: ") }
                     .map { String($0.dropFirst("Error: ".count)) }
-                reply(nil, message ?? "Unable to release the DHCP leases (vphone-cli exited with \(process.terminationStatus)).")
+                reply(
+                    nil,
+                    message
+                        ?? "Unable to release the DHCP leases (vphone-cli exited with \(process.terminationStatus))."
+                )
                 return
             }
             reply(text, nil)
@@ -332,10 +364,12 @@ final class VPhoneLaunchpadHelperService: NSObject, VPhoneLaunchpadHelperProtoco
         DispatchQueue.global(qos: .userInitiated).async {
             defer { reply() }
             // A machine that cannot be found has nothing running to stop.
-            guard let machine = try? VPhoneLaunchpadHelperFirmwareRequest.machineKey(
-                libraryRoot: libraryRoot,
-                machineName: machineName,
-            ) else { return }
+            guard
+                let machine = try? VPhoneLaunchpadHelperFirmwareRequest.machineKey(
+                    libraryRoot: libraryRoot,
+                    machineName: machineName,
+                )
+            else { return }
             Self.firmwareLock.lock()
             // A run is registered just before its process starts, and
             // interrupting a process that has not started raises.

@@ -39,11 +39,13 @@ nonisolated protocol VPhoneLaunchpadHelperProtocol {
     )
 
     /// Removes one version from the bundle store.
-    func removeBundle(authorization: Data, version: String, reply: @escaping @Sendable (String?) -> Void)
+    func removeBundle(
+        authorization: Data, version: String, reply: @escaping @Sendable (String?) -> Void)
 
     /// Allows only the installed bundle's receipt-pinned vphone-vm through
     /// AMFI, using that bundle's vphone-escalator as root.
-    func allowVirtualMachine(authorization: Data, bundleVersion: String, reply: @escaping @Sendable (String?) -> Void)
+    func allowVirtualMachine(
+        authorization: Data, bundleVersion: String, reply: @escaping @Sendable (String?) -> Void)
 
     /// Runs `vphone-cli cfw install` from a store bundle as root, on behalf of
     /// the calling user. Output lines arrive through
@@ -106,6 +108,16 @@ nonisolated protocol VPhoneLaunchpadHelperProtocol {
     /// the guest's data. Same output channel and reply as `installCustomFirmware`,
     /// and `cancelCustomFirmware` stops it.
     func updateKernel(
+        authorization: Data,
+        bundleVersion: String,
+        machineName: String,
+        libraryRoot: String,
+        reply: @escaping @Sendable (Int32, String?) -> Void,
+    )
+
+    /// Runs `vphone-cli cfw boot-rollback` from a store bundle as root:
+    /// restores the previous kernel slot after a failed boot.
+    func rollbackKernel(
         authorization: Data,
         bundleVersion: String,
         machineName: String,

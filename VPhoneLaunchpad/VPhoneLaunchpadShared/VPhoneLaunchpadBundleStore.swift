@@ -44,7 +44,8 @@ nonisolated struct VPhoneLaunchpadBundleReceipt: Codable, Equatable, Sendable {
     let cdhashes: [String: String]
 
     static func load(version: String) -> VPhoneLaunchpadBundleReceipt? {
-        guard let data = try? Data(contentsOf: VPhoneLaunchpadBundleStore.receipt(version: version)) else {
+        guard let data = try? Data(contentsOf: VPhoneLaunchpadBundleStore.receipt(version: version))
+        else {
             return nil
         }
         return try? decoder.decode(Self.self, from: data)
@@ -71,9 +72,9 @@ nonisolated struct VPhoneLaunchpadBundleReceipt: Codable, Equatable, Sendable {
 /// must not trust the app.
 nonisolated enum VPhoneLaunchpadNames {
     /// Minimum bundle version for Launchpad's CLI and receipt contract.
-    /// Series 2.14: `--preset` takes the path of a preset plist.
-    /// Series 2.16: `vm create` of an Apple Vision Pro selects the `visionos` preset.
-    private static let minimumBundleComponents = (2, 16, 0)
+    /// Series 2.17: `cfw boot-commit` and `cfw boot-rollback` use the A/B
+    /// admission contract in the 2.17.1 bundle.
+    private static let minimumBundleComponents = (2, 17, 1)
     static let minimumBundleVersion =
         "\(minimumBundleComponents.0).\(minimumBundleComponents.1).\(minimumBundleComponents.2)"
 
@@ -107,7 +108,7 @@ nonisolated enum VPhoneLaunchpadNames {
         guard isValidVersion(value) else { return false }
         let parts = bundleVersion(of: value).split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3,
-              let major = Int(parts[0]), let minor = Int(parts[1]), let patch = Int(parts[2])
+            let major = Int(parts[0]), let minor = Int(parts[1]), let patch = Int(parts[2])
         else { return false }
         return (major, minor, patch) >= minimumBundleComponents
     }
