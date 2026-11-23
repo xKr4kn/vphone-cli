@@ -88,7 +88,7 @@ nonisolated enum VPhoneLaunchpadNames {
     /// --template --skip-first-boot`, which New Machine and Templates run,
     /// and `template` and `templateMatch` in `vm list --json`, which a
     /// machine's inspector shows.
-    private static let minimumBundleComponents = (2, 9, 5)
+    private static let minimumBundleComponents = (2, 9, 4)
     static let minimumBundleVersion =
         "\(minimumBundleComponents.0).\(minimumBundleComponents.1).\(minimumBundleComponents.2)"
 
