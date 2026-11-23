@@ -24,14 +24,17 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
     public static let manifest = VPhonePatchSetManifest(
         identifier: identifier,
         name: "Kernel Custom Firmware",
-        summary: "Trust cache admission, writable root, task ports and the guest's extra syscall surface",
+        summary:
+            "Trust cache admission, writable root, task ports and the guest's extra syscall surface",
         patches: [
             VPhonePatchDeclaration(
                 identifier: tvTPROPagers,
                 title: "TV TPRO pager compatibility",
-                summary: "Defaults sprr_tpro_pagers to zero so plain-arm64 tvOS dyld can make DATA_CONST writable. Pair with the TV dyld TPRO patch.",
+                summary:
+                    "Defaults sprr_tpro_pagers to zero so plain-arm64 tvOS dyld can make DATA_CONST writable. Pair with the TV dyld TPRO patch.",
                 target: .firmware(.kernelcache),
-                applicability: VPhonePatchApplicability(iOSBase: .major(26), cloudOS: .release(major: 26, minor: 4)),
+                applicability: VPhonePatchApplicability(
+                    iOSBase: .major(26), cloudOS: .release(major: 26, minor: 4)),
             ),
             // MARK: Trust Cache and Code Signing
 
@@ -154,7 +157,8 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
             VPhonePatchDeclaration(
                 identifier: "kernel-boot-shared_region_size",
                 title: "Shared region size",
-                summary: "Widens the arm64 shared region from 6 GiB to 7 GiB so an iOS 27 cache spans it.",
+                summary:
+                    "Widens the arm64 shared region from 6 GiB to 7 GiB so an iOS 27 cache spans it.",
                 target: .firmware(.kernelcache),
                 applicability: ios27,
                 bootEssential: true,
@@ -232,6 +236,13 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 bootEssential: true,
             ),
             VPhonePatchDeclaration(
+                identifier: "kernel-boot-trace536",
+                title: "Syscall 536 tracer",
+                summary: "Records syscall 536 arguments and return value into a kernel buffer.",
+                target: .firmware(.kernelcache),
+                bootEssential: true,
+            ),
+            VPhonePatchDeclaration(
                 identifier: "kernel-boot-syscallmask",
                 title: "Per-process syscall mask",
                 summary: "Widens the syscall mask a process inherits.",
@@ -244,16 +255,19 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
             VPhonePatchDeclaration(
                 identifier: cssc,
                 title: "CSSC instruction compatibility",
-                summary: "Emulates scalar CSSC instructions in user-mode exception handling, including before launchd starts, on hosts without native CSSC.",
+                summary:
+                    "Emulates scalar CSSC instructions in user-mode exception handling, including before launchd starts, on hosts without native CSSC.",
                 target: .firmware(.kernelcache),
-                applicability: VPhonePatchApplicability(iOSBase: .major(27), cloudOS: .release(major: 26, minor: 4)),
+                applicability: VPhonePatchApplicability(
+                    iOSBase: .major(27), cloudOS: .release(major: 26, minor: 4)),
                 bootEssential: true,
             ),
 
             VPhonePatchDeclaration(
                 identifier: "kernel-boot-arm64e_x1",
                 title: "ARM64E_X1 admission",
-                summary: "Admits subtype-12 binaries, enables exec PAC and selects the ARM64E authenticated shared region required by the iOS 27 userland.",
+                summary:
+                    "Admits subtype-12 binaries, enables exec PAC and selects the ARM64E authenticated shared region required by the iOS 27 userland.",
                 target: .firmware(.kernelcache),
                 applicability: ios27,
                 bootEssential: true,
@@ -302,7 +316,8 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
             VPhonePatchDeclaration(
                 identifier: "kernel-cfw-aks_unlock_bag",
                 title: "Keybag unlock arguments",
-                summary: "Accepts the five-argument keybag unlock an iOS 26.6-or-newer userland sends, so escrow unlock and encrypted backups work on the 26.4 kernel.",
+                summary:
+                    "Accepts the five-argument keybag unlock an iOS 26.6-or-newer userland sends, so escrow unlock and encrypted backups work on the 26.4 kernel.",
                 target: .firmware(.kernelcache),
                 // iOS 26.6 is where Apple's keybag-unlock external method began
                 // sending inputScalarCount == 5 (26.5 and earlier send 4); the
@@ -315,14 +330,15 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: FirmwarePatchSetCatalog.paravirtUserClientsPatch,
                 title: "Paravirtual device access",
                 summary: """
-                Lets a process outside an app sandbox open the paravirtual GPU, video decoder, \
-                Neural Engine and IOSurface scaler, so daemons and command-line tools get Metal \
-                and WebKit decodes video in hardware. Allows only those four device classes by \
-                name; every other sandbox denial stays. Without it cameracaptured cannot \
-                prewarm its shaders and crash-loops at every boot.
-                """,
+                    Lets a process outside an app sandbox open the paravirtual GPU, video decoder, \
+                    Neural Engine and IOSurface scaler, so daemons and command-line tools get Metal \
+                    and WebKit decodes video in hardware. Allows only those four device classes by \
+                    name; every other sandbox denial stays. Without it cameracaptured cannot \
+                    prewarm its shaders and crash-loops at every boot.
+                    """,
                 target: .firmware(.kernelcache),
-                applicability: VPhonePatchApplicability(iOSBase: .oneOf([.major(26), .major(18), .major(17), .major(16)])),
+                applicability: VPhonePatchApplicability(
+                    iOSBase: .oneOf([.major(26), .major(18), .major(17), .major(16)])),
             ),
 
             // MARK: Display
@@ -331,11 +347,11 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: FirmwarePatchSetCatalog.proMotionPatch,
                 title: "ProMotion",
                 summary: """
-                Makes the paravirtual display advertise 120 Hz, as a ProMotion panel does, \
-                instead of the host's fixed 60 Hz mode. While it animates the guest renders \
-                twice as often, so the host spends up to twice the CPU and GPU on it; turn it \
-                off to keep 60 Hz.
-                """,
+                    Makes the paravirtual display advertise 120 Hz, as a ProMotion panel does, \
+                    instead of the host's fixed 60 Hz mode. While it animates the guest renders \
+                    twice as often, so the host spends up to twice the CPU and GPU on it; turn it \
+                    off to keep 60 Hz.
+                    """,
                 target: .firmware(.kernelcache),
             ),
 
@@ -345,11 +361,11 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: FirmwarePatchSetCatalog.paravirtTask3Patch,
                 title: "GPU Task3 shader cache",
                 summary: """
-                The guest GPU driver asks the host for binary version 252 \
-                (Task3) while keeping its own features, and writes the owning \
-                executable's code-signing hash into each task root. The host \
-                retains a separate shader cache for each executable across boots.
-                """,
+                    The guest GPU driver asks the host for binary version 252 \
+                    (Task3) while keeping its own features, and writes the owning \
+                    executable's code-signing hash into each task root. The host \
+                    retains a separate shader cache for each executable across boots.
+                    """,
                 target: .firmware(.kernelcache),
                 // The task initializer and owning-task anchors differ on the
                 // cloudOS 26.1–26.3 kernels; discovery fails there.
@@ -360,10 +376,10 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 identifier: FirmwarePatchSetCatalog.paravirtGLESPatch,
                 title: "OpenGL ES",
                 summary: """
-                Names AppleMetalGLRenderer as the paravirtual GPU's OpenGL ES renderer, \
-                as Apple GPUs do, so apps that create an EAGLContext get OpenGL ES over \
-                Metal instead of nil.
-                """,
+                    Names AppleMetalGLRenderer as the paravirtual GPU's OpenGL ES renderer, \
+                    as Apple GPUs do, so apps that create an EAGLContext get OpenGL ES over \
+                    Metal instead of nil.
+                    """,
                 target: .firmware(.kernelcache),
             ),
         ],

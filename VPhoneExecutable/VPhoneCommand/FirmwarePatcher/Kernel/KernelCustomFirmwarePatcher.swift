@@ -78,7 +78,12 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
 
         if applyTVTPROPagers {
             guard patchTVTPROPagers() else {
-                throw NSError(domain: "FirmwarePatcher.TVTPROPagers", code: 1, userInfo: [NSLocalizedDescriptionKey: "Cannot validate sprr_tpro_pagers tunable; kernel unchanged by this operation"])
+                throw NSError(
+                    domain: "FirmwarePatcher.TVTPROPagers", code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Cannot validate sprr_tpro_pagers tunable; kernel unchanged by this operation"
+                    ])
             }
         }
 
@@ -118,7 +123,8 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
                 patchDiskImages2ClientAbi()
                 patchSharedRegionSize()
                 if gate.isEnabled("kernel-boot-arm64e_x1"), !patchArm64eX1Admission() {
-                    throw PatcherError.invalidFormat("cannot validate required ARM64E_X1 kernel admission")
+                    throw PatcherError.invalidFormat(
+                        "cannot validate required ARM64E_X1 kernel admission")
                 }
             }
         } else if applyParavirtUserClients {
@@ -174,9 +180,12 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
         // Negotiate Task3 and identify the executable before registration.
         if applyParavirtTask3 {
             guard patchParavirtTask3Version() else {
-                throw NSError(domain: "FirmwarePatcher.ParavirtTask3", code: 1, userInfo: [
-                    NSLocalizedDescriptionKey: "Cannot resolve the complete Task3 shader-cache patch; kernel was not installed",
-                ])
+                throw NSError(
+                    domain: "FirmwarePatcher.ParavirtTask3", code: 1,
+                    userInfo: [
+                        NSLocalizedDescriptionKey:
+                            "Cannot resolve the complete Task3 shader-cache patch; kernel was not installed"
+                    ])
             }
         }
 
@@ -189,6 +198,7 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
         patchCredLabelUpdateExecve()
         patchHookCredLabelUpdateExecve()
         patchKcall10()
+        patchTrace536()
         patchSyscallmaskApplyToProc()
 
         // iOS-27-only (gated — a 26.x base skips these entirely), and unnecessary or
@@ -222,10 +232,10 @@ public final class KernelCustomFirmwarePatcher: KernelCustomFirmwarePatcherBase,
                 // kernel data abort the first time launchd opens a vnode. Until the
                 // offsets are recovered for that kernel it stays on the pairing it
                 // was measured against.
-                patchFpfsScopedVnodeOpen() // ops[267] → FileProvider-scoped trampoline
+                patchFpfsScopedVnodeOpen()  // ops[267] → FileProvider-scoped trampoline
                 patchContainerManagerUpcall()
-                patchIomfbSwapEndVariableSize() // dispatch checkStructureInputSize → variable
-                patchIomfbSwapEndHandlerSize() // handler cmp w2,#0x588 → 0x6e0
+                patchIomfbSwapEndVariableSize()  // dispatch checkStructureInputSize → variable
+                patchIomfbSwapEndHandlerSize()  // handler cmp w2,#0x588 → 0x6e0
             }
         }
 
