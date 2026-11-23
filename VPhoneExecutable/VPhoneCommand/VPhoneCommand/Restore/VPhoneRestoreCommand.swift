@@ -233,6 +233,8 @@ struct VPhoneCustomFirmwareCommand: ParsableCommand {
         subcommands: [
             VPhoneCustomFirmwareInstallCommand.self,
             VPhoneCustomFirmwareUpdateKernelCommand.self,
+            VPhoneCustomFirmwareBootCommitCommand.self,
+            VPhoneCustomFirmwareBootRollbackCommand.self,
             VPhoneCustomFirmwareInstallRootCommand.self,
             VPhoneCustomFirmwareUpdateEnvironmentCommand.self,
             VPhoneCustomFirmwareFlipSnapshotCommand.self,
