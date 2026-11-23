@@ -1660,7 +1660,7 @@ struct VPhoneCustomFirmwareInstaller {
     static func requiredFreeSpaceGiB(for mode: Mode) -> Int64 {
         switch mode {
         case .full: 50
-        case .environmentOnly, .kernelUpdate: 10
+        case .environmentOnly, .kernelUpdate, .kernelRollback: 10
         }
     }
 

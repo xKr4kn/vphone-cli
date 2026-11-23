@@ -238,9 +238,10 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
             VPhonePatchDeclaration(
                 identifier: "kernel-boot-trace536",
                 title: "Syscall 536 tracer",
-                summary: "Records syscall 536 arguments and return value into a kernel buffer.",
+                summary:
+                    "Records syscall 536 arguments and return value into a kernel buffer. Not boot-safe on 23B85 (launchd PAC panic); opt-in only.",
                 target: .firmware(.kernelcache),
-                bootEssential: true,
+                bootEssential: false,
             ),
             VPhonePatchDeclaration(
                 identifier: "kernel-boot-syscallmask",

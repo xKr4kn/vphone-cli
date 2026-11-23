@@ -1,6 +1,18 @@
 # A/B kernel admission for `cfw update-kernel`
 
-Status: live A/B rollback validated on `vphone26s` (2026-11-23); the commit-success path remains unit-tested until a bootable candidate is available.
+Status: ported to upstream 2.17.1 (2026-11-23). The A/B admission tests pass 14/14; the 2.17.1 Launchpad control, firmware-admission, helper-library, and bundle-name tests pass. Historical live A/B rollback was validated on `vphone26s` (2026-11-23) on the 2.9.5 line; the 2.17.1 VM validation is recorded below when it runs.
+
+## 2.17.1 port validation (2026-11-23)
+
+- Built and signed Launchpad 2.17.1 (helper 22) and `VPhone.bundle` 2.17.1, installed the local bundle as `2.17.1-local.4f8f5656`, bound `vphone26`, and updated its guest environment. Baseline: active `A` (`ad9302…`), standby `B`.
+- The trace536 + display-promotion candidate `B` (`6034c2…`, 86 patches) panicked in launchd with a PAC failure; `cfw boot-rollback` restored `A`, marked `B` bad, and the restored `A` answered vphoned after 4 s.
+- A trace-off/display-promotion-off candidate `B` (`1b562e…`, 83 patches) booted; `cfw boot-commit` promoted it (`active: b`, `A` standby), wrote a `booted` receipt for slot `B`, and the committed `B` booted and answered `device.info`.
+- A trace-on/display-promotion-off candidate also panicked; trace536 is the common failure, so it is declared `bootEssential: false` and `vphone26` blocks both `kernel-boot-trace536` and `kernel-cfw-display_promotion`. Final state: active `B`, `A` bad, machine stopped.
+- Guest infrastructure on the booted kernel: `ui.describe`, `apps.list`, `processes.list` (200), and a locked screenshot succeeded; unlock succeeded, but the guest agent dropped before the next screenshot on the 2.17.1 guest environment over the 2.9.x boot chain/2.9.5 kernel. This needs a 2.17.1 boot-chain/guest-environment revalidation.
+- Host tests: A/B 14/14; Launchpad 13 shell scripts; CoreKit 784; Restore 73; Sign 30; FirmwarePatcher 1023/1028 (5 missing local `ipsws` fixtures); ArchiveKit 101/103 (one host-tar parity failure).
+- The bundle's AMFI allow step failed because `amfid` had idle-exited (`escalator status: amfid is not running`); preflight passed and the bundle was accepted for this permissive-host test.
+
+
 
 ## Why
 
