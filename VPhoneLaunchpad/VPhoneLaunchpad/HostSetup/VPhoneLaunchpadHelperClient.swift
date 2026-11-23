@@ -39,7 +39,8 @@ final class VPhoneLaunchpadHelperClient {
     }
 
     private var bundledHelper: URL {
-        Bundle.main.bundleURL.appendingPathComponent("Contents/Library/LaunchServices/\(Self.label)")
+        Bundle.main.bundleURL.appendingPathComponent(
+            "Contents/Library/LaunchServices/\(Self.label)")
     }
 
     private var installedHelper: URL {
@@ -48,14 +49,15 @@ final class VPhoneLaunchpadHelperClient {
 
     private var installedHelperMatches: Bool {
         guard let bundled = try? Data(contentsOf: bundledHelper, options: .mappedIfSafe),
-              let installed = try? Data(contentsOf: installedHelper, options: .mappedIfSafe)
+            let installed = try? Data(contentsOf: installedHelper, options: .mappedIfSafe)
         else { return false }
         return SHA256.hash(data: bundled) == SHA256.hash(data: installed)
     }
 
     /// The requirement the app holds the helper to, from SMPrivilegedExecutables.
     private var helperRequirement: String? {
-        let executables = Bundle.main.object(forInfoDictionaryKey: "SMPrivilegedExecutables") as? [String: String]
+        let executables =
+            Bundle.main.object(forInfoDictionaryKey: "SMPrivilegedExecutables") as? [String: String]
         return executables?[Self.label]
     }
 
@@ -73,7 +75,8 @@ final class VPhoneLaunchpadHelperClient {
         guard isConfigured else {
             return .unconfigured
         }
-        let hasJob = FileManager.default.fileExists(atPath: "/Library/LaunchDaemons/\(Self.label).plist")
+        let hasJob = FileManager.default.fileExists(
+            atPath: "/Library/LaunchDaemons/\(Self.label).plist")
         let hasExecutable = FileManager.default.fileExists(atPath: installedHelper.path)
         guard hasJob || hasExecutable else {
             return .notInstalled
@@ -97,7 +100,8 @@ final class VPhoneLaunchpadHelperClient {
         let bundled = bundledVersion ?? "?"
         do {
             let installed = try await version()
-            state = installed == bundled && installedHelperMatches
+            state =
+                installed == bundled && installedHelperMatches
                 ? .ready(installed)
                 : .outdated(installed: installed, bundled: bundled)
         } catch {
@@ -112,7 +116,10 @@ final class VPhoneLaunchpadHelperClient {
         guard isConfigured else {
             throw VPhoneLaunchpadError(
                 String(localized: "Unable to Install Helper"),
-                detail: String(localized: "This build has no signing team. Rebuild and sign the app with your team, then try again."),
+                detail: String(
+                    localized:
+                        "This build has no signing team. Rebuild and sign the app with your team, then try again."
+                ),
             )
         }
         try await Task.detached { try Self.bless() }.value
@@ -122,7 +129,9 @@ final class VPhoneLaunchpadHelperClient {
         guard case .ready = state else {
             throw VPhoneLaunchpadError(
                 String(localized: "Unable to Install Helper"),
-                detail: String(localized: "The installed helper did not match the copy in this app. Try again."),
+                detail: String(
+                    localized: "The installed helper did not match the copy in this app. Try again."
+                ),
             )
         }
     }
@@ -139,12 +148,13 @@ final class VPhoneLaunchpadHelperClient {
         state = .notInstalled
     }
 
-    private typealias JobBless = @convention(c) (
-        CFString,
-        CFString,
-        AuthorizationRef,
-        UnsafeMutablePointer<Unmanaged<CFError>?>?,
-    ) -> DarwinBoolean
+    private typealias JobBless =
+        @convention(c) (
+            CFString,
+            CFString,
+            AuthorizationRef,
+            UnsafeMutablePointer<Unmanaged<CFError>?>?,
+        ) -> DarwinBoolean
 
     /// `SMJobBless`, looked up in ServiceManagement at run time. macOS 13
     /// deprecated it in favour of `SMAppService`, but it still works, and the
@@ -163,7 +173,9 @@ final class VPhoneLaunchpadHelperClient {
         var authorization: AuthorizationRef?
         var status = AuthorizationCreate(nil, nil, [], &authorization)
         guard status == errAuthorizationSuccess, let authorization else {
-            throw VPhoneLaunchpadError(String(localized: "Unable to Get Administrator Permission"), detail: String(localized: "Try again."))
+            throw VPhoneLaunchpadError(
+                String(localized: "Unable to Get Administrator Permission"),
+                detail: String(localized: "Try again."))
         }
         defer { AuthorizationFree(authorization, []) }
 
@@ -184,15 +196,19 @@ final class VPhoneLaunchpadHelperClient {
             if status == errAuthorizationCanceled {
                 throw CancellationError()
             }
-            throw VPhoneLaunchpadError(String(localized: "Unable to Get Administrator Permission"), detail: String(localized: "Try again."))
+            throw VPhoneLaunchpadError(
+                String(localized: "Unable to Get Administrator Permission"),
+                detail: String(localized: "Try again."))
         }
 
         var error: Unmanaged<CFError>?
         guard let jobBless = Self.jobBless,
-              jobBless(kSMDomainSystemLaunchd, label as CFString, authorization, &error).boolValue
+            jobBless(kSMDomainSystemLaunchd, label as CFString, authorization, &error).boolValue
         else {
-            let detail = error?.takeRetainedValue().localizedDescription ?? String(localized: "Try again.")
-            throw VPhoneLaunchpadError(String(localized: "Unable to Install Helper"), detail: detail)
+            let detail =
+                error?.takeRetainedValue().localizedDescription ?? String(localized: "Try again.")
+            throw VPhoneLaunchpadError(
+                String(localized: "Unable to Install Helper"), detail: detail)
         }
     }
 
@@ -234,12 +250,15 @@ final class VPhoneLaunchpadHelperClient {
         }
         guard case .ready = state else {
             throw VPhoneLaunchpadError(
-                String(localized: "Update the privileged helper in Host Setup, then run preflight again."),
+                String(
+                    localized:
+                        "Update the privileged helper in Host Setup, then run preflight again."),
             )
         }
         let authorization = try await authorizationSession.externalForm()
         try await call { proxy, done in
-            proxy.allowVirtualMachine(authorization: authorization, bundleVersion: bundleVersion) { message in
+            proxy.allowVirtualMachine(authorization: authorization, bundleVersion: bundleVersion) {
+                message in
                 done(message.map { VPhoneLaunchpadError($0) })
             }
         }
@@ -254,7 +273,8 @@ final class VPhoneLaunchpadHelperClient {
         keepArtifacts: Bool,
         onLine: @escaping @Sendable (String) -> Void,
     ) async throws -> Int32 {
-        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) { proxy, authorization, reply in
+        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) {
+            proxy, authorization, reply in
             proxy.installCustomFirmware(
                 authorization: authorization,
                 bundleVersion: bundleVersion,
@@ -274,7 +294,8 @@ final class VPhoneLaunchpadHelperClient {
         libraryRoot: String,
         onLine: @escaping @Sendable (String) -> Void,
     ) async throws -> Int32 {
-        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) { proxy, authorization, reply in
+        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) {
+            proxy, authorization, reply in
             proxy.updateGuestEnvironment(
                 authorization: authorization,
                 bundleVersion: bundleVersion,
@@ -293,8 +314,29 @@ final class VPhoneLaunchpadHelperClient {
         libraryRoot: String,
         onLine: @escaping @Sendable (String) -> Void,
     ) async throws -> Int32 {
-        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) { proxy, authorization, reply in
+        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) {
+            proxy, authorization, reply in
             proxy.updateKernel(
+                authorization: authorization,
+                bundleVersion: bundleVersion,
+                machineName: machineName,
+                libraryRoot: libraryRoot,
+                reply: reply,
+            )
+        }
+    }
+
+    /// Runs `cfw boot-rollback` as root: restores the previous kernel slot
+    /// after a failed boot. Output lines go to `onLine`.
+    func rollbackKernel(
+        bundleVersion: String,
+        machineName: String,
+        libraryRoot: String,
+        onLine: @escaping @Sendable (String) -> Void,
+    ) async throws -> Int32 {
+        try await runFirmware(machineName: machineName, libraryRoot: libraryRoot, onLine: onLine) {
+            proxy, authorization, reply in
+            proxy.rollbackKernel(
                 authorization: authorization,
                 bundleVersion: bundleVersion,
                 machineName: machineName,
@@ -312,7 +354,8 @@ final class VPhoneLaunchpadHelperClient {
             try await install()
         }
         guard case .ready = state else {
-            throw VPhoneLaunchpadError(String(localized: "Update the privileged helper in Host Setup, then try again."))
+            throw VPhoneLaunchpadError(
+                String(localized: "Update the privileged helper in Host Setup, then try again."))
         }
         let authorization = try await authorizationSession.externalForm()
         return try await request { proxy, done in
@@ -345,13 +388,20 @@ final class VPhoneLaunchpadHelperClient {
         machineName: String,
         libraryRoot: String,
         onLine: @escaping @Sendable (String) -> Void,
-        _ body: @escaping (VPhoneLaunchpadHelperProtocol, Data, @escaping @Sendable (Int32, String?) -> Void) -> Void,
+        _ body:
+            @escaping (
+                VPhoneLaunchpadHelperProtocol, Data, @escaping @Sendable (Int32, String?) -> Void
+            ) -> Void,
     ) async throws -> Int32 {
         let key = URL(fileURLWithPath: libraryRoot, isDirectory: true)
             .appendingPathComponent(machineName)
             .standardizedFileURL.resolvingSymlinksInPath().path
         guard firmwareMachines.insert(key).inserted else {
-            throw VPhoneLaunchpadError(String(localized: "A CFW install or environment update is already running on this machine. Wait for it to finish, then try again."))
+            throw VPhoneLaunchpadError(
+                String(
+                    localized:
+                        "A CFW install or environment update is already running on this machine. Wait for it to finish, then try again."
+                ))
         }
         defer { firmwareMachines.remove(key) }
         let authorization = try await authorizationSession.externalForm()
@@ -368,7 +418,9 @@ final class VPhoneLaunchpadHelperClient {
                 }
             }
         } onCancel: {
-            Task { @MainActor in self.cancelCustomFirmware(machineName: machineName, libraryRoot: libraryRoot) }
+            Task { @MainActor in
+                self.cancelCustomFirmware(machineName: machineName, libraryRoot: libraryRoot)
+            }
         }
     }
 
@@ -397,7 +449,8 @@ final class VPhoneLaunchpadHelperClient {
         let connection = NSXPCConnection(machServiceName: Self.label, options: .privileged)
         connection.remoteObjectInterface = NSXPCInterface(with: VPhoneLaunchpadHelperProtocol.self)
         if let receiver {
-            connection.exportedInterface = NSXPCInterface(with: VPhoneLaunchpadHelperClientProtocol.self)
+            connection.exportedInterface = NSXPCInterface(
+                with: VPhoneLaunchpadHelperClientProtocol.self)
             connection.exportedObject = receiver
         }
         if let helperRequirement {
@@ -412,7 +465,8 @@ final class VPhoneLaunchpadHelperClient {
     /// shared one.
     private func request<T: Sendable>(
         on connection: NSXPCConnection? = nil,
-        _ body: (VPhoneLaunchpadHelperProtocol, @escaping @Sendable (Result<T, Error>) -> Void) -> Void,
+        _ body: (VPhoneLaunchpadHelperProtocol, @escaping @Sendable (Result<T, Error>) -> Void) ->
+            Void,
     ) async throws -> T {
         let connection = connection ?? currentConnection()
         return try await withCheckedThrowingContinuation { continuation in
@@ -421,7 +475,13 @@ final class VPhoneLaunchpadHelperClient {
                 once.resume(.failure(error))
             }
             guard let helper = proxy as? VPhoneLaunchpadHelperProtocol else {
-                once.resume(.failure(VPhoneLaunchpadError(String(localized: "Unable to connect to the helper. Quit and reopen the app, then try again."))))
+                once.resume(
+                    .failure(
+                        VPhoneLaunchpadError(
+                            String(
+                                localized:
+                                    "Unable to connect to the helper. Quit and reopen the app, then try again."
+                            ))))
                 return
             }
             body(helper) { once.resume($0) }
@@ -439,7 +499,10 @@ final class VPhoneLaunchpadHelperClient {
 
     private func withTimeout<T: Sendable>(
         seconds: Double,
-        _ body: @escaping (VPhoneLaunchpadHelperProtocol, @escaping @Sendable (Result<T, Error>) -> Void) -> Void,
+        _ body:
+            @escaping (
+                VPhoneLaunchpadHelperProtocol, @escaping @Sendable (Result<T, Error>) -> Void
+            ) -> Void,
     ) async throws -> T {
         let connection = currentConnection()
         return try await withCheckedThrowingContinuation { continuation in
@@ -448,10 +511,17 @@ final class VPhoneLaunchpadHelperClient {
                 once.resume(.failure(error))
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + seconds) {
-                once.resume(.failure(VPhoneLaunchpadError(String(localized: "The helper did not answer."))))
+                once.resume(
+                    .failure(VPhoneLaunchpadError(String(localized: "The helper did not answer."))))
             }
             guard let helper = proxy as? VPhoneLaunchpadHelperProtocol else {
-                once.resume(.failure(VPhoneLaunchpadError(String(localized: "Unable to connect to the helper. Quit and reopen the app, then try again."))))
+                once.resume(
+                    .failure(
+                        VPhoneLaunchpadError(
+                            String(
+                                localized:
+                                    "Unable to connect to the helper. Quit and reopen the app, then try again."
+                            ))))
                 return
             }
             body(helper) { once.resume($0) }
@@ -505,7 +575,9 @@ final nonisolated class VPhoneLaunchpadHelperAuthorizationSession: @unchecked Se
                 return reference
             }
             var created: AuthorizationRef?
-            guard AuthorizationCreate(nil, nil, [], &created) == errAuthorizationSuccess, let created else {
+            guard AuthorizationCreate(nil, nil, [], &created) == errAuthorizationSuccess,
+                let created
+            else {
                 throw Self.failure
             }
             self.reference = created
@@ -551,7 +623,9 @@ final nonisolated class VPhoneLaunchpadHelperAuthorizationSession: @unchecked Se
 
 /// Receives the output lines the helper streams back during one CFW install
 /// or update, on that operation's own connection.
-final nonisolated class VPhoneLaunchpadHelperReceiver: NSObject, VPhoneLaunchpadHelperClientProtocol, Sendable {
+final nonisolated class VPhoneLaunchpadHelperReceiver: NSObject,
+    VPhoneLaunchpadHelperClientProtocol, Sendable
+{
     private let handler: @Sendable (String) -> Void
 
     init(_ handler: @escaping @Sendable (String) -> Void) {
