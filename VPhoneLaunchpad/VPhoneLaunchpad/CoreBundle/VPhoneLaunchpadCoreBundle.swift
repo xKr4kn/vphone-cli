@@ -117,14 +117,23 @@ final class VPhoneLaunchpadCoreBundle {
             plan.contains { status($0) == .failed }
         }
 
+        var rules: VPhoneLaunchpadInstallProgressRules {
+            VPhoneLaunchpadInstallProgressRules(
+                hasError: error != nil,
+                hasFailedStep: hasFailedStep,
+                isFinished: isFinished,
+                installPassed: status(.install) == .passed,
+            )
+        }
+
         /// Once the bundle is in the store, only the checks after it failed,
         /// and those may be skipped.
         var canSkip: Bool {
-            (error != nil || hasFailedStep) && status(.install) == .passed && !isFinished
+            rules.canSkip
         }
 
         var overall: VPhoneLaunchpadStatus {
-            if error != nil || hasFailedStep {
+            if rules.overallFailed {
                 return .failed
             }
             if !isFinished {
@@ -257,7 +266,7 @@ final class VPhoneLaunchpadCoreBundle {
         guard let progress else {
             return false
         }
-        return progress.overall == .running
+        return progress.rules.isInstalling
     }
 
     // MARK: - Accepted versions

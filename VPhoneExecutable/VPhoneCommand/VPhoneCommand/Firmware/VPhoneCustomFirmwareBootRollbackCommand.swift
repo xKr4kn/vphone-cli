@@ -29,6 +29,12 @@ struct VPhoneCustomFirmwareBootRollbackCommand: ParsableCommand {
     )
     var evidence = "operator rollback after a failed boot"
 
+    @Option(
+        name: .customLong("work-parent"),
+        help: "Root-owned private CFW temporary directory",
+    )
+    var workParent = VPhoneCustomFirmwareInstaller.defaultWorkParent
+
     func run() throws {
         let name = try VPhoneVirtualMachineSelection.resolveExisting(name, in: lib.library)
         let bundle = try lib.library.bundle(named: name)
@@ -37,6 +43,7 @@ struct VPhoneCustomFirmwareBootRollbackCommand: ParsableCommand {
             bundle: bundle.url,
             resources: VPhoneResources.resolve(),
             mode: .kernelRollback,
+            workParent: workParent,
         )
         throw ExitCode(code)
     }

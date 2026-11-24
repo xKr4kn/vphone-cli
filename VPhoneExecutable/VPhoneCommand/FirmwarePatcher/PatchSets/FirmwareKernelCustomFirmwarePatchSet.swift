@@ -236,12 +236,16 @@ public enum FirmwareKernelCustomFirmwarePatchSet {
                 bootEssential: true,
             ),
             VPhonePatchDeclaration(
-                identifier: "kernel-cfw-trace536",
+                identifier: "kernel-boot-trace536",
                 title: "Syscall 536 tracer",
                 summary:
-                    "Records syscall 536 arguments and return value into a kernel buffer. Optional diagnostic patch; the cave preserves x30 and authenticates with retab.",
+                    "Records syscall 536 arguments and return value into a kernel buffer. Validated on the 26.1/23B85 sysent layout; boot-essential in the standard preset.",
                 target: .firmware(.kernelcache),
-                bootEssential: false,
+                applicability: VPhonePatchApplicability(
+                    iOSBase: .release(major: 26, minor: 1),
+                    cloudOS: .release(major: 26, minor: 1),
+                ),
+                bootEssential: true,
             ),
             VPhonePatchDeclaration(
                 identifier: "kernel-boot-syscallmask",

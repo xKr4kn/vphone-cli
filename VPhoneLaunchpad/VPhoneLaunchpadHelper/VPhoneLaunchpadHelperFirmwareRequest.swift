@@ -101,15 +101,25 @@ struct VPhoneLaunchpadHelperFirmwareRequest {
                 "--work-parent", workParent,
             ]
         case .updateKernel:
-            arguments = ["cfw", "update-kernel", machineName, "--library-root", libraryRoot,
-                         "--work-parent", workParent]
+            arguments = [
+                "cfw", "update-kernel", machineName, "--library-root", libraryRoot,
+                "--work-parent", workParent,
+            ]
         case .bootRollback:
-            arguments = ["cfw", "boot-rollback", machineName, "--library-root", libraryRoot]
+            arguments = [
+                "cfw", "boot-rollback", machineName, "--library-root", libraryRoot,
+                "--work-parent", workParent,
+            ]
         case .patchRestoreImage:
-            arguments = ["fw", "patch", machineName, "--library-root", libraryRoot, "--restore-image-only", "--work-parent", workParent]
+            arguments = [
+                "fw", "patch", machineName, "--library-root", libraryRoot, "--restore-image-only",
+                "--work-parent", workParent,
+            ]
         case .linkKernelcache:
-            arguments = ["fw", "kernelcache", machineName, "--library-root", libraryRoot,
-                         "--link-only", "--work-parent", workParent]
+            arguments = [
+                "fw", "kernelcache", machineName, "--library-root", libraryRoot,
+                "--link-only", "--work-parent", workParent,
+            ]
         }
 
         self.executable = executable

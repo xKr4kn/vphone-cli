@@ -14,6 +14,13 @@ Status: ported to upstream 2.17.1 (2026-11-23). The A/B admission tests pass 14/
 - Host tests: A/B 14/14; Launchpad 13 shell scripts; CoreKit 784; Restore 73; Sign 30; FirmwarePatcher 1023/1028 (5 missing local `ipsws` fixtures); ArchiveKit 101/103 (one host-tar parity failure).
 - The d149 bundle install passed both policy and preflight; the earlier 4f8 install's AMFI allow step failed because `amfid` had idle-exited. The fixed app's install state no longer sticks.
 
+## Review-hardening pass (2026-11-24)
+
+- Trace536 cave: fixed the epilogue order, loads four 32-bit args (the 23B85 sysent entry has four 4-byte args), requires `argBytes >= 0x10`, and selects a verified-zero file tail or writable `__DATA` segment tail instead of the first BSS variable. The tracer is gated to iOS/cloudOS 26.1. A cave regression test asserts the `x21/x30` pop before `retab` and the four word loads.
+- Added a pure install-progress rules test for the policy-failed/no-error state, boot-command table/parse tests, and `--work-parent` on the helper's `cfw boot-rollback` request and command.
+- The trace plan now says `on` (`fw patches`), but `fw patch` and `cfw update-kernel` still log `kernel-boot-trace536.cave/sy_call: off in this preset`; the apply-time gate is not receiving the selection/plan override. No live trace boot has been made with the 4×32-bit cave. This resolver/gate mismatch is open.
+- Final machines: `vphone26` active `B` (trace off), `vphone26s` active `A` (previous trace kernel), both on `2.17.1-local.ddee3000` with matching guest environments and stopped. The installed app reports `installing: false`, `canInstallBundles: true`, helper `ready (22)`.
+
 
 
 

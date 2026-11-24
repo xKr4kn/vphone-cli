@@ -263,3 +263,34 @@ struct FirmwareBootAdmissionTests {
         #expect(FirmwareBootAdmission.receiptFileName == "BootReceipt.plist")
     }
 }
+
+@Suite("Trace536 cave")
+struct Trace536CaveTests {
+    @Test
+    func `restores x30 before retab`() throws {
+        let cave = KernelCustomFirmwarePatcher.buildTrace536Cave(
+            caveVA: 0x1_0000_0000,
+            origVA: 0x1_0000_2000,
+            logVA: 0x1_0000_3000,
+        )
+        let bytes = [UInt8](cave)
+        var words: [UInt32] = []
+        var index = 0
+        while index + 4 <= bytes.count {
+            words.append(
+                UInt32(bytes[index])
+                    | UInt32(bytes[index + 1]) << 8
+                    | UInt32(bytes[index + 2]) << 16
+                    | UInt32(bytes[index + 3]) << 24,
+            )
+            index += 4
+        }
+        let retab = try #require(words.lastIndex(of: 0xD65F_0FFF))
+        #expect(words[retab - 2] == 0xA8C1_7BF5)  // ldp x21, x30, [sp], #0x10
+        #expect(words[retab - 1] == 0xA8C1_53F3)  // ldp x19, x20, [sp], #0x10
+        #expect(words.contains(0xB940_0689))  // ldr w9, [x20, #8]
+        #expect(words.contains(0xB940_0E8B))  // ldr w11, [x20, #0x18]
+        #expect(!words.contains(0xF940_0689))  // never an 8-byte read past a 16-byte argument block
+        #expect(!words.contains(0xF940_0E8B))
+    }
+}

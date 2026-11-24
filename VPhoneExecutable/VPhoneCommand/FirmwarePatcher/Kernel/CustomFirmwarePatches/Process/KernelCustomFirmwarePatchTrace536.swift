@@ -6,7 +6,7 @@
 //
 // Cave layout:
 //   pacibsp; stp x19,x20; stp x21,x30
-//   ldr w8,[x1]; ldr x9,[x1,#8]; ldr w10,[x1,#0x10]; ldr x11,[x1,#0x18]
+//   ldr w8,[x1]; ldr w9,[x1,#8]; ldr w10,[x1,#0x10]; ldr w11,[x1,#0x18]
 //   adrp/add x12, LOG; stur the four values
 //   mov x0,x19; mov x1,x20; adrp/add x16, ORIG; blr x16
 //   stur x0,[x12,#0x20]; stur magic,[x12,#0x28]
@@ -35,6 +35,14 @@ extension KernelCustomFirmwarePatcher {
             log("  [-] sysent[536] outside file")
             return false
         }
+        let entryNArg = buffer.data.loadLE(UInt16.self, at: entry + 20)
+        let entryArgBytes = buffer.data.loadLE(UInt16.self, at: entry + 22)
+        guard entryNArg >= 4, entryArgBytes >= 0x10 else {
+            log(
+                "  [-] sysent[536] takes \(entryNArg) args (\(entryArgBytes) bytes); the tracer needs four 4-byte args"
+            )
+            return false
+        }
         let oldCall = buffer.readU64(at: entry)
         let origFoff = decodeChainedPtrForTrace(oldCall)
         guard origFoff > 0, let origVA = virtualAddressForTrace(forFileOffset: origFoff) else {
@@ -56,10 +64,10 @@ extension KernelCustomFirmwarePatcher {
             return false
         }
 
-        let cave = buildTrace536Cave(caveVA: caveVA, origVA: origVA, logVA: logVA)
+        let cave = Self.buildTrace536Cave(caveVA: caveVA, origVA: origVA, logVA: logVA)
         emit(
             caveOff, cave,
-            patchID: "kernel-cfw-trace536.cave",
+            patchID: "kernel-boot-trace536.cave",
             description: "trace536 cave (logs uap[0..3] + ret to 0x\(String(format: "%X", logVA)))")
         emit(
             entry,
@@ -70,7 +78,7 @@ extension KernelCustomFirmwarePatcher {
                 key: extractChainKeyForTrace(oldCall),
                 addrDiv: extractChainAddrDivForTrace(oldCall)
             ),
-            patchID: "kernel-cfw-trace536.sy_call",
+            patchID: "kernel-boot-trace536.sy_call",
             description: "sysent[536].sy_call = trace536 cave 0x\(String(format: "%X", caveOff))")
         log(
             "  [+] orig handler foff 0x\(String(format: "%X", origFoff)) va 0x\(String(format: "%X", origVA))"
@@ -85,26 +93,26 @@ extension KernelCustomFirmwarePatcher {
     // MARK: - Locate a writable zero region (uses the __DATA segment tail)
 
     private func findTraceBufferVA() -> UInt64? {
-        // Prefer a true bss tail (vmSize > fileSize); fall back to a verified-zero
-        // 0x100-byte tail of a __DATA segment (padding slack, never a live global).
-        var fallback: UInt64?
-        for seg in segments {
-            guard seg.name.hasPrefix("__DATA") else { continue }
-            if seg.vmSize > seg.fileSize {
-                let start = seg.vmAddr + seg.fileSize
-                if seg.vmSize - seg.fileSize >= 0x100 {
-                    return (start + 0xF) & ~0xF
-                }
+        // Only writable data segments. __DATA_CONST is read-only at runtime.
+        // Use a verified-zero file-backed tail first; the start of BSS is the
+        // first live variable, not padding. A BSS tail is the last resort.
+        let writable: Set = ["__DATA", "__DATA_DIRTY"]
+        var bssTail: UInt64?
+        for seg in segments where writable.contains(seg.name) && seg.vmSize >= 0x100 {
+            let tail = (seg.vmAddr + seg.vmSize - 0x100) & ~0xF
+            guard tail >= seg.vmAddr, tail + 0x100 <= seg.vmAddr + seg.vmSize else {
+                continue
             }
-            if seg.vmSize >= 0x200 {
-                let cand = (seg.vmAddr + seg.vmSize - 0x100) & ~0xF
-                if let fo = fileOffsetForTrace(forVA: cand), fo + 0x100 <= buffer.count {
-                    let bytes = buffer.readBytes(at: fo, count: 0x100)
-                    if bytes.allSatisfy({ $0 == 0 }) { fallback = cand }
-                }
+            if let fo = fileOffsetForTrace(forVA: tail), fo + 0x100 <= buffer.count,
+                buffer.readBytes(at: fo, count: 0x100).allSatisfy({ $0 == 0 })
+            {
+                return tail
+            }
+            if seg.vmSize > seg.fileSize, tail >= seg.vmAddr + seg.fileSize {
+                bssTail = tail
             }
         }
-        return fallback
+        return bssTail
     }
 
     private func fileOffsetForTrace(forVA va: UInt64) -> Int? {
@@ -118,7 +126,7 @@ extension KernelCustomFirmwarePatcher {
 
     // MARK: - Cave builder
 
-    private func buildTrace536Cave(caveVA: UInt64, origVA: UInt64, logVA: UInt64) -> Data {
+    static func buildTrace536Cave(caveVA: UInt64, origVA: UInt64, logVA: UInt64) -> Data {
         var code: [UInt32] = []
         code.append(0xD503_237F)  // pacibsp
         code.append(0xA9BF_53F3)  // stp x19, x20, [sp, #-0x10]!
@@ -126,9 +134,9 @@ extension KernelCustomFirmwarePatcher {
         code.append(0xAA00_03F3)  // mov x19, x0
         code.append(0xAA01_03F4)  // mov x20, x1
         code.append(0xB940_0288)  // ldr w8,  [x20]
-        code.append(0xF940_0689)  // ldr x9,  [x20, #8]
+        code.append(0xB940_0689)  // ldr w9,  [x20, #8]
         code.append(0xB940_128A)  // ldr w10, [x20, #0x10]
-        code.append(0xF940_0E8B)  // ldr x11, [x20, #0x18]
+        code.append(0xB940_0E8B)  // ldr w11, [x20, #0x18]
         let cmnIdx = code.count
         code.append(0x3100_051F)  // cmn w8, #1  (cnt1 == 0xffffffff ?)
         let beqIdx = code.count
@@ -176,7 +184,7 @@ extension KernelCustomFirmwarePatcher {
         return out
     }
 
-    private func encodeADRP(_ rd: UInt32, pc: UInt64, target: UInt64) -> UInt32 {
+    static func encodeADRP(_ rd: UInt32, pc: UInt64, target: UInt64) -> UInt32 {
         let pcPage = pc & ~0xFFF
         let tPage = target & ~0xFFF
         let delta = Int64(bitPattern: tPage &- pcPage) >> 12
@@ -186,7 +194,7 @@ extension KernelCustomFirmwarePatcher {
         return 0x9000_0000 | (immlo << 29) | (immhi << 5) | rd
     }
 
-    private func encodeADD(_ rd: UInt32, _ rn: UInt32, _ targetVA: UInt64) -> UInt32 {
+    static func encodeADD(_ rd: UInt32, _ rn: UInt32, _ targetVA: UInt64) -> UInt32 {
         0x9100_0000 | (UInt32(targetVA & 0xFFF) << 10) | (rn << 5) | rd
     }
 
